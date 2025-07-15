@@ -48,6 +48,34 @@ const commands = [
     .setDescription('現在の設定（速度と音量）を表示します')
     .toJSON(),
   new SlashCommandBuilder()
+    .setName('teamlist')
+    .setDescription('名前のリストからチームを分けます')
+    .addStringOption(option =>
+      option.setName('names')
+        .setDescription('カンマ区切りの名前リスト（例：太郎,花子,三郎,四郎）')
+        .setRequired(true))
+    .addIntegerOption(option =>
+      option.setName('teams')
+        .setDescription('チームの数')
+        .setRequired(true)
+        .setMinValue(2)
+        .setMaxValue(10))
+    .toJSON(),
+  new SlashCommandBuilder()
+    .setName('teamvc')
+    .setDescription('ボイスチャンネルのメンバーをチーム分けします')
+    .addChannelOption(option =>
+      option.setName('channel')
+        .setDescription('メンバーがいるボイスチャンネル')
+        .setRequired(true))
+    .addIntegerOption(option =>
+      option.setName('teams')
+        .setDescription('チームの数')
+        .setRequired(true)
+        .setMinValue(2)
+        .setMaxValue(10))
+    .toJSON(),
+  new SlashCommandBuilder()
     .setName('listen')
     .setDescription('チャンネルのメッセージを読み上げます')
     .addChannelOption(option =>
@@ -223,16 +251,50 @@ function disconnectFromVoice(guildId) {
   }
 }
 
-// 言語コードから言語名を取得するヘルパー関数
+// 言語コードから言語名を取得する関数
 function getLanguageName(languageCode) {
-  const languageMap = {
+  const languages = {
     'ja-JP': '日本語',
     'en-US': '英語',
     'zh-CN': '中国語',
     'ko-KR': '韓国語'
   };
   
-  return languageMap[languageCode] || languageCode;
+  return languages[languageCode] || '不明';
+}
+
+// チーム分けを行う関数
+function divideIntoTeams(members, teamCount) {
+  // メンバー配列をシャッフル
+  const shuffled = [...members];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  
+  // チームに分ける
+  const teams = Array.from({ length: teamCount }, () => []);
+  shuffled.forEach((member, index) => {
+    const teamIndex = index % teamCount;
+    teams[teamIndex].push(member);
+  });
+  
+  return teams;
+}
+
+// チーム分け結果をフォーマットする関数
+function formatTeamResult(teams) {
+  let result = '';
+  
+  teams.forEach((team, index) => {
+    result += `**チーム${index + 1}**\n`;
+    team.forEach(member => {
+      result += `- ${member}\n`;
+    });
+    result += '\n';
+  });
+  
+  return result;
 }
 
 // イベントハンドラ
@@ -401,6 +463,62 @@ client.on('interactionCreate', async interaction => {
       };
       
       await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+    
+    if (interaction.commandName === 'teamlist') {
+      // パラメータを取得
+      const namesInput = interaction.options.getString('names');
+      const teamCount = interaction.options.getInteger('teams');
+      
+      // 名前を配列に変換
+      const names = namesInput.split(',').map(name => name.trim()).filter(name => name !== '');
+      
+      // 名前が十分にあるかチェック
+      if (names.length < teamCount) {
+        return interaction.reply({ content: `チーム数（${teamCount}）よりも名前の数（${names.length}）が少ないため、チーム分けができません。`, ephemeral: true });
+      }
+      
+      // チーム分けを実行
+      const teams = divideIntoTeams(names, teamCount);
+      
+      // 結果をフォーマット
+      const result = formatTeamResult(teams);
+      
+      // 結果を表示
+      await interaction.reply({ content: `**チーム分け結果**\n\n${result}`, ephemeral: false });
+    }
+    
+    if (interaction.commandName === 'teamvc') {
+      // パラメータを取得
+      const voiceChannel = interaction.options.getChannel('channel');
+      const teamCount = interaction.options.getInteger('teams');
+      
+      // チャンネルがボイスチャンネルか確認
+      if (voiceChannel.type !== 2) { // 2 = GUILD_VOICE
+        return interaction.reply({ content: 'ボイスチャンネルを選択してください。', ephemeral: true });
+      }
+      
+      // チャンネル内のメンバーを取得
+      const members = voiceChannel.members.map(member => member.user.username);
+      
+      // メンバーがいるか確認
+      if (members.length === 0) {
+        return interaction.reply({ content: `ボイスチャンネル ${voiceChannel.name} にはメンバーがいません。`, ephemeral: true });
+      }
+      
+      // メンバーが十分にいるか確認
+      if (members.length < teamCount) {
+        return interaction.reply({ content: `チーム数（${teamCount}）よりもメンバーの数（${members.length}）が少ないため、チーム分けができません。`, ephemeral: true });
+      }
+      
+      // チーム分けを実行
+      const teams = divideIntoTeams(members, teamCount);
+      
+      // 結果をフォーマット
+      const result = formatTeamResult(teams);
+      
+      // 結果を表示
+      await interaction.reply({ content: `**ボイスチャンネル ${voiceChannel.name} のチーム分け結果**\n\n${result}`, ephemeral: false });
     }
     
     if (interaction.commandName === 'listen') {
