@@ -562,12 +562,14 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ content: 'ボイスチャンネルを選択してください。', ephemeral: true });
       }
       
-      // チャンネル内のメンバーを取得
-      const members = voiceChannel.members.map(member => member.user.username);
+      // チャンネル内のメンバーを取得（Bot自身を除外）
+      const members = voiceChannel.members
+        .filter(member => !member.user.bot) // Botを除外
+        .map(member => member.user.username);
       
       // メンバーがいるか確認
       if (members.length === 0) {
-        return interaction.reply({ content: `ボイスチャンネル ${voiceChannel.name} にはメンバーがいません。`, ephemeral: true });
+        return interaction.reply({ content: `ボイスチャンネル ${voiceChannel.name} には参加可能なメンバーがいません。`, ephemeral: true });
       }
       
       // メンバーが十分にいるか確認
