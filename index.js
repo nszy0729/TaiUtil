@@ -45,7 +45,24 @@ const commands = [
     .toJSON(),
   new SlashCommandBuilder()
     .setName('settings')
-    .setDescription('現在の設定（速度と音量）を表示します')
+    .setDescription('現在の設定（速度、音量、声の種類）を表示します')
+    .toJSON(),
+  new SlashCommandBuilder()
+    .setName('voice')
+    .setDescription('声の種類を設定します')
+    .addStringOption(option =>
+      option.setName('gender')
+        .setDescription('声の種類')
+        .setRequired(true)
+        .addChoices(
+          { name: '中性的な声', value: 'NEUTRAL' },
+          { name: '男性の声', value: 'MALE' },
+          { name: '女性の声', value: 'FEMALE' }
+        ))
+    .addChannelOption(option =>
+      option.setName('channel')
+        .setDescription('設定を適用するチャンネル（指定がない場合は全チャンネルに適用）')
+        .setRequired(false))
     .toJSON(),
   new SlashCommandBuilder()
     .setName('teamlist')
@@ -136,11 +153,17 @@ let defaultSpeakingRate = 1.0; // 1.0が標準速度
 // デフォルトの音量
 let defaultVolume = 1.0; // 1.0が標準音量
 
-// 読み上げ対象のチャンネルを管理するオブジェクト
-const activeChannels = {};
+// デフォルトの声の種類
+let defaultVoiceGender = 'NEUTRAL'; // NEUTRAL, MALE, FEMALEから選択可能
 
 // 読み上げ言語のデフォルト設定
 const defaultLanguages = {};
+
+// 声の種類のデフォルト設定
+const defaultVoiceGenders = {};
+
+// 読み上げ対象のチャンネルを管理するオブジェクト
+const activeChannels = {};
 
 // ボイスコネクションを管理するオブジェクト
 const voiceConnections = {};
@@ -149,10 +172,10 @@ const voiceConnections = {};
 const audioPlayers = {};
 
 // 音声ファイルを生成する関数
-async function generateSpeech(text, language = 'ja-JP', speakingRate = defaultSpeakingRate) {
+async function generateSpeech(text, language = 'ja-JP', speakingRate = defaultSpeakingRate, voiceGender = defaultVoiceGender) {
   const request = {
     input: { text },
-    voice: { languageCode: language, ssmlGender: 'NEUTRAL' },
+    voice: { languageCode: language, ssmlGender: voiceGender },
     audioConfig: { 
       audioEncoding: 'MP3',
       speakingRate: speakingRate // 読み上げ速度を設定
@@ -331,8 +354,11 @@ client.on('messageCreate', async message => {
     // 言語を取得
     const language = defaultLanguages[message.channelId] || 'ja-JP';
     
+    // 声の種類を取得
+    const voiceGender = defaultVoiceGenders[message.channelId] || defaultVoiceGender;
+    
     // 音声ファイルを生成
-    const success = await generateSpeech(message.content, language, defaultSpeakingRate);
+    const success = await generateSpeech(message.content, language, defaultSpeakingRate, voiceGender);
     if (!success) {
       console.error('音声生成に失敗しました');
       return;
@@ -439,6 +465,12 @@ client.on('interactionCreate', async interaction => {
       // 現在の設定を取得
       const speed = defaultSpeakingRate;
       const volume = defaultVolume;
+      const voice = defaultVoiceGender;
+      
+      // 声の種類を日本語表示に変換
+      let voiceDisplay = '中性的な声';
+      if (voice === 'MALE') voiceDisplay = '男性の声';
+      if (voice === 'FEMALE') voiceDisplay = '女性の声';
       
       // 設定情報を表示
       const embed = {
@@ -454,6 +486,11 @@ client.on('interactionCreate', async interaction => {
             name: '音量',
             value: `${volume}倍`,
             inline: true
+          },
+          {
+            name: '声の種類',
+            value: voiceDisplay,
+            inline: true
           }
         ],
         timestamp: new Date().toISOString(),
@@ -463,6 +500,33 @@ client.on('interactionCreate', async interaction => {
       };
       
       await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+    
+    if (interaction.commandName === 'voice') {
+      const gender = interaction.options.getString('gender');
+      const channel = interaction.options.getChannel('channel');
+      
+      // チャンネルが指定されている場合は、そのチャンネルのみに設定を適用
+      if (channel) {
+        defaultVoiceGenders[channel.id] = gender;
+        
+        // 声の種類を日本語表示に変換
+        let voiceDisplay = '中性的な声';
+        if (gender === 'MALE') voiceDisplay = '男性の声';
+        if (gender === 'FEMALE') voiceDisplay = '女性の声';
+        
+        await interaction.reply({ content: `${channel.name} の声の種類を${voiceDisplay}に設定しました。`, ephemeral: true });
+      } else {
+        // チャンネルが指定されていない場合は、デフォルトの設定を変更
+        defaultVoiceGender = gender;
+        
+        // 声の種類を日本語表示に変換
+        let voiceDisplay = '中性的な声';
+        if (gender === 'MALE') voiceDisplay = '男性の声';
+        if (gender === 'FEMALE') voiceDisplay = '女性の声';
+        
+        await interaction.reply({ content: `デフォルトの声の種類を${voiceDisplay}に設定しました。`, ephemeral: true });
+      }
     }
     
     if (interaction.commandName === 'teamlist') {
